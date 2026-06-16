@@ -50,7 +50,7 @@ dist/
 out/
 target/
 debug/
-release/
+/release/
 cmake-build-*/
 CMakeFiles/
 compile_commands.json
