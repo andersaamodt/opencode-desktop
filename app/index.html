@@ -1,0 +1,209 @@
+<!-- Repo license: OWL 3.1 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCode</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="titlebar">
+    <div class="status-group">
+      <span class="dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">initializing</span>
+    </div>
+    <div class="actions">
+      <button id="browserBtn" class="action-btn" title="Open in browser">↗</button>
+      <button id="reloadBtn" class="action-btn" title="Reload">⟳</button>
+    </div>
+  </header>
+
+  <main id="viewport">
+    <div id="loading" class="state-center">
+      <div class="spinner"></div>
+      <h2 class="state-title">Starting OpenCode</h2>
+      <p class="state-desc" id="loadingMessage">Launching server…</p>
+    </div>
+
+    <div id="error" class="state-center" hidden>
+      <div class="error-icon">⚠</div>
+      <h2 class="state-title">Failed to start</h2>
+      <p class="state-desc" id="errorMessage">Could not start the OpenCode server.</p>
+      <button id="retryBtn" class="btn">Retry</button>
+    </div>
+
+    <iframe id="appFrame" class="gui-frame" src="about:blank"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+      allow="clipboard-read; clipboard-write; microphone; camera; display-capture"
+      hidden></iframe>
+  </main>
+
+  <script src="./.host/shared/wizardry-bridge.js"></script>
+  <script>
+    (function () {
+      var bridge = window.wizardry;
+      var STATE = { url: null, cleanupPath: null };
+
+      var el = {
+        loading:    document.getElementById('loading'),
+        error:      document.getElementById('error'),
+        frame:      document.getElementById('appFrame'),
+        statusDot:  document.getElementById('statusDot'),
+        statusText: document.getElementById('statusText'),
+        loadingMsg: document.getElementById('loadingMessage'),
+        errorMsg:   document.getElementById('errorMessage'),
+        retryBtn:   document.getElementById('retryBtn'),
+        browserBtn: document.getElementById('browserBtn'),
+        reloadBtn:  document.getElementById('reloadBtn'),
+      };
+
+      function setStatus(label, ok) {
+        el.statusText.textContent = label;
+        el.statusDot.className = 'dot' + (ok ? ' dot--ok' : ' dot--init');
+      }
+
+      function showState(state) {
+        el.loading.hidden = state !== 'loading';
+        el.error.hidden   = state !== 'error';
+        el.frame.hidden   = state !== 'ready';
+      }
+
+      // ── Server lifecycle ──────────────────────────────────────────
+
+      var PORT = 7459;
+
+      function startServer() {
+        enableBackgroundMode();
+        showState('loading');
+        setStatus('starting…', false);
+        el.loadingMsg.textContent = 'Finding opencode…';
+
+        // Kill any leftover server from a previous run
+        killOldServer();
+
+        if (!bridge || !bridge.exec) {
+          el.loadingMsg.textContent = 'Bridge unavailable — probing local port…';
+          setStatus('no bridge', false);
+          return pollServer('http://127.0.0.1:' + PORT, 15, 1000)
+            .then(function () { return connect('http://127.0.0.1:' + PORT); })
+            .catch(fail);
+        }
+
+        return findOpenCode().then(function (bin) {
+          STATE.bin = bin;
+          STATE.url = 'http://127.0.0.1:' + PORT;
+
+          el.loadingMsg.textContent = 'Starting server…';
+          // Fire-and-forget via nohup so the server survives the exec'd shell exiting
+          bridge.exec(['sh', '-c',
+            'nohup "' + bin + '" serve --port ' + PORT + ' --print-logs > /dev/null 2>&1 &'
+          ]).catch(function () {});
+
+          el.loadingMsg.textContent = 'Waiting for server…';
+          return pollServer(STATE.url, 60, 1000);
+        }).then(function () {
+          return connect(STATE.url);
+        }).catch(function (err) {
+          return fail(err);
+        });
+      }
+
+      function findOpenCode() {
+        // Try via PATH first, then check well-known locations
+        return bridge.exec(['sh', '-c',
+          'BIN=$(command -v opencode 2>/dev/null) && [ -n "$BIN" ] && echo "$BIN" && exit 0;' +
+          'for d in "$HOME/.opencode/bin" /usr/local/bin /opt/homebrew/bin /opt/bin; do ' +
+          '  [ -x "$d/opencode" ] && echo "$d/opencode" && exit 0;' +
+          'done; exit 1'
+        ]).then(function (res) {
+          var p = (res.stdout || '').trim();
+          if (p) return p;
+          throw new Error('opencode binary not found');
+        });
+      }
+
+      function pollServer(url, maxAttempts, interval) {
+        return new Promise(function (resolve, reject) {
+          var attempts = 0;
+          function poll() {
+            attempts++;
+            fetch(url, { mode: 'no-cors' }).then(function () {
+              resolve();
+            }).catch(function () {
+              if (attempts >= maxAttempts) {
+                reject(new Error('Server did not start (tried ' + maxAttempts + ' times)'));
+              } else {
+                setTimeout(poll, interval);
+              }
+            });
+          }
+          poll();
+        });
+      }
+
+      function connect(url) {
+        setStatus('running', true);
+        showState('ready');
+        el.frame.src = url;
+        enableBackgroundMode();
+      }
+
+      function enableBackgroundMode() {
+        if (bridge && bridge.exec) {
+          bridge.exec(['__wizardry_host_set_background_mode', '1', '0'])
+            .catch(function () {});
+        }
+      }
+
+      function fail(err) {
+        showState('error');
+        setStatus('error', false);
+        el.errorMsg.textContent = err.message || String(err);
+        throw err;
+      }
+
+      // ── Cleanup ───────────────────────────────────────────────────
+
+      function killOldServer() {
+        if (STATE.bin && bridge && bridge.exec) {
+          bridge.exec(['pkill', '-f', 'opencode serve --port ' + PORT])
+            .catch(function () {});
+          STATE.bin = null;
+        }
+      }
+
+      function stopServer() { killOldServer(); }
+
+      window.addEventListener('beforeunload', stopServer);
+      window.addEventListener('pagehide', stopServer);
+
+      // ── UI handlers ───────────────────────────────────────────────
+
+      el.browserBtn.addEventListener('click', function () {
+        if (STATE.url && bridge && bridge.exec) {
+          bridge.exec(['open', STATE.url]);
+        }
+      });
+
+      el.reloadBtn.addEventListener('click', function () {
+        if (STATE.url) {
+          el.frame.src = STATE.url;
+        }
+      });
+
+      el.retryBtn.addEventListener('click', function () {
+        startServer().catch(noop);
+      });
+
+      function noop() {}
+
+      // ── Boot ──────────────────────────────────────────────────────
+
+      startServer().catch(function (err) {
+        console.error('[opencode-desktop]', err);
+      });
+    })();
+  </script>
+</body>
+</html>
