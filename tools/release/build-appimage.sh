@@ -69,5 +69,22 @@ exec "$HERE/usr/bin/wizardry-host" "$HERE/usr/share/opencode-desktop/app"
 APP
 chmod +x "$appdir/AppRun"
 
+[ -f "$appdir/opencode-desktop.desktop" ] || {
+  printf '%s\n' 'build-appimage.sh: missing top-level desktop entry in AppDir' >&2
+  exit 1
+}
+[ -f "$appdir/opencode-desktop.png" ] || {
+  printf '%s\n' 'build-appimage.sh: missing top-level icon in AppDir' >&2
+  exit 1
+}
+[ -f "$appdir/usr/share/opencode-desktop/app/index.html" ] || {
+  printf '%s\n' 'build-appimage.sh: missing app/index.html in AppDir payload' >&2
+  exit 1
+}
+[ -f "$appdir/usr/share/opencode-desktop/app/.host/shared/wizardry-bridge.js" ] || {
+  printf '%s\n' 'build-appimage.sh: missing wizardry bridge in AppDir payload' >&2
+  exit 1
+}
+
 ARCH=x86_64 appimagetool "$appdir" "$OUT_DIR/OpenCode-x86_64.AppImage"
 printf '%s\n' "$OUT_DIR/OpenCode-x86_64.AppImage"
