@@ -49,6 +49,7 @@ cp -R "$ROOT_DIR/app" "$appdir/usr/share/opencode-desktop/app"
 mkdir -p "$appdir/usr/share/opencode-desktop/app/.host/shared"
 cp "$WIZARDRY_ROOT/apps/.host/shared/wizardry-bridge.js" "$appdir/usr/share/opencode-desktop/app/.host/shared/wizardry-bridge.js"
 cp "$ROOT_DIR/assets/forge-icon.png" "$appdir/usr/share/icons/hicolor/1024x1024/apps/opencode-desktop.png"
+cp "$ROOT_DIR/assets/forge-icon.png" "$appdir/opencode-desktop.png"
 
 cat > "$appdir/usr/share/applications/opencode-desktop.desktop" <<'DESKTOP'
 [Desktop Entry]
@@ -58,6 +59,7 @@ Exec=wizardry-host
 Icon=opencode-desktop
 Categories=Development;Utility;
 DESKTOP
+cp "$appdir/usr/share/applications/opencode-desktop.desktop" "$appdir/opencode-desktop.desktop"
 
 cat > "$appdir/AppRun" <<'APP'
 #!/bin/sh
