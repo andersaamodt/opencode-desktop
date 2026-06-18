@@ -212,6 +212,134 @@ print $source;
 EOF
   perl "$patch_script" "$host_source" > "$host_source.patched"
   mv "$host_source.patched" "$host_source"
+
+  interface_patch="$tmpdir/patch-macos-interface.pl"
+  cat > "$interface_patch" <<'EOF'
+use strict;
+use warnings;
+
+my $needle = <<'NEEDLE';
+- (void)openMainWindowFromStatusItem:(id)sender;
+- (void)toggleMainWindowFromStatusItem:(id)sender;
+- (void)quitFromAppMenu:(id)sender;
+NEEDLE
+
+my $replacement = <<'REPLACEMENT';
+- (void)openMainWindowFromStatusItem:(id)sender;
+- (void)toggleMainWindowFromStatusItem:(id)sender;
+- (void)nativeOpenCodePreferences:(id)sender;
+- (void)quitFromAppMenu:(id)sender;
+REPLACEMENT
+
+my $source = do { local $/; <> };
+index($source, $needle) >= 0 or die "patch-macos-interface.pl: interface needle not found\n";
+$source =~ s/\Q$needle\E/$replacement/ or die "patch-macos-interface.pl: failed to patch interface\n";
+print $source;
+EOF
+  perl "$interface_patch" "$host_source" > "$host_source.patched"
+  mv "$host_source.patched" "$host_source"
+
+  menu_patch="$tmpdir/patch-macos-menu.pl"
+  cat > "$menu_patch" <<'EOF'
+use strict;
+use warnings;
+
+my $needle = <<'NEEDLE';
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:appName];
+    NSString *aboutTitle = [NSString stringWithFormat:@"About %@", appName];
+    [appMenu addItemWithTitle:aboutTitle action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    if (self.enableForgeAppMenu) {
+NEEDLE
+
+my $replacement = <<'REPLACEMENT';
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:appName];
+    NSString *aboutTitle = [NSString stringWithFormat:@"About %@", appName];
+    [appMenu addItemWithTitle:aboutTitle action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *openCodePrefs = [appMenu addItemWithTitle:@"Preferences…"
+                                                   action:@selector(nativeOpenCodePreferences:)
+                                            keyEquivalent:@","];
+    [openCodePrefs setTarget:self];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    if (self.enableForgeAppMenu) {
+REPLACEMENT
+
+my $source = do { local $/; <> };
+index($source, $needle) >= 0 or die "patch-macos-menu.pl: menu needle not found\n";
+$source =~ s/\Q$needle\E/$replacement/ or die "patch-macos-menu.pl: failed to patch menu\n";
+print $source;
+EOF
+  perl "$menu_patch" "$host_source" > "$host_source.patched"
+  mv "$host_source.patched" "$host_source"
+
+  method_patch="$tmpdir/patch-macos-method.pl"
+  cat > "$method_patch" <<'EOF'
+use strict;
+use warnings;
+
+my $needle = <<'NEEDLE';
+- (void)nativeForgeOpenSettings:(id)sender {
+    (void)sender;
+    [self dispatchForgeMenuAction:@"open-settings"];
+}
+
+- (void)nativeForgeOpenCreateWorkflow:(id)sender {
+NEEDLE
+
+my $replacement = <<'REPLACEMENT';
+- (void)nativeForgeOpenSettings:(id)sender {
+    (void)sender;
+    [self dispatchForgeMenuAction:@"open-settings"];
+}
+
+- (void)nativeOpenCodePreferences:(id)sender {
+    (void)sender;
+    if (!self.webView) {
+        return;
+    }
+    NSString *js =
+      @"(function () {"
+       "  var marker = '__opencode_desktop_app_base__=';"
+       "  var name = String(window.name || '');"
+       "  var index = name.indexOf(marker);"
+       "  var base = '';"
+       "  var preferencesUrl = '';"
+       "  if (index >= 0) {"
+       "    base = name.slice(index + marker.length).split('\\n')[0];"
+       "    if (base) {"
+       "      try {"
+       "        base = decodeURIComponent(base);"
+       "      } catch (error) {"
+       "      }"
+       "    }"
+       "  }"
+       "  if (!base || !window.wizardry || typeof window.wizardry.exec !== 'function') {"
+       "    return;"
+       "  }"
+       "  try {"
+       "    preferencesUrl = new URL('preferences.html', base).href;"
+       "  } catch (error) {"
+       "    return;"
+       "  }"
+       "  window.wizardry.exec(['__wizardry_host_open_window', preferencesUrl, 'OpenCode Preferences', '920', '760']).catch(function () {});"
+       "})();";
+    [self.webView evaluateJavaScript:js completionHandler:nil];
+}
+
+- (void)nativeForgeOpenCreateWorkflow:(id)sender {
+REPLACEMENT
+
+my $source = do { local $/; <> };
+index($source, $needle) >= 0 or die "patch-macos-method.pl: method needle not found\n";
+$source =~ s/\Q$needle\E/$replacement/ or die "patch-macos-method.pl: failed to patch method\n";
+print $source;
+EOF
+  perl "$method_patch" "$host_source" > "$host_source.patched"
+  mv "$host_source.patched" "$host_source"
 }
 
 mkdir -p "$OUT_DIR"
