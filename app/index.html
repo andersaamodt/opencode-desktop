@@ -13,15 +13,19 @@
       <div class="spinner"></div>
       <h2 class="state-title">Starting OpenCode</h2>
       <p class="state-desc" id="loadingMessage">Launching server…</p>
+      <div class="state-actions">
+        <button class="btn btn-secondary" data-open-preferences>Local Models</button>
+      </div>
     </div>
 
     <div id="error" class="state-center" hidden>
       <div class="error-icon">⚠</div>
       <h2 class="state-title">Failed to start</h2>
       <p class="state-desc" id="errorMessage">Could not start the OpenCode server.</p>
-      <div class="error-actions">
+      <div class="state-actions">
         <button id="retryBtn" class="btn">Retry</button>
         <button id="browserBtn" class="btn btn-secondary">Open in browser</button>
+        <button class="btn btn-secondary" data-open-preferences>Local Models</button>
       </div>
     </div>
   </main>
@@ -31,6 +35,7 @@
     (function () {
       var bridge = window.wizardry;
       var STATE = { url: null };
+      var WINDOW_NAME_PREFIX = '__opencode_desktop_app_base__=';
 
       var el = {
         loading:    document.getElementById('loading'),
@@ -39,6 +44,7 @@
         errorMsg:   document.getElementById('errorMessage'),
         retryBtn:   document.getElementById('retryBtn'),
         browserBtn: document.getElementById('browserBtn'),
+        preferencesButtons: document.querySelectorAll('[data-open-preferences]'),
       };
 
       function showState(state) {
@@ -119,6 +125,7 @@
 
       function connect(url) {
         enableBackgroundMode();
+        rememberAppBase();
         window.location.replace(url);
       }
 
@@ -133,6 +140,41 @@
         showState('error');
         el.errorMsg.textContent = err.message || String(err);
         throw err;
+      }
+
+      function rememberAppBase() {
+        var appBase;
+        try {
+          appBase = new URL('./', window.location.href).href;
+        } catch (_error) {
+          return '';
+        }
+        window.name = WINDOW_NAME_PREFIX + encodeURIComponent(appBase);
+        return appBase;
+      }
+
+      function openPreferencesWindow() {
+        var appBase = rememberAppBase();
+        var preferencesUrl;
+
+        try {
+          preferencesUrl = new URL('preferences.html', appBase || window.location.href).href;
+        } catch (_error) {
+          preferencesUrl = 'preferences.html';
+        }
+
+        if (bridge && bridge.exec) {
+          bridge.exec([
+            '__wizardry_host_open_window',
+            preferencesUrl,
+            'OpenCode Preferences',
+            '920',
+            '760'
+          ]).catch(function () {});
+          return;
+        }
+
+        window.open(preferencesUrl, '_blank', 'width=920,height=760');
       }
 
       // ── Cleanup ───────────────────────────────────────────────────
@@ -161,10 +203,17 @@
         startServer().catch(noop);
       });
 
+      Array.prototype.forEach.call(el.preferencesButtons, function (button) {
+        button.addEventListener('click', function () {
+          openPreferencesWindow();
+        });
+      });
+
       function noop() {}
 
       // ── Boot ──────────────────────────────────────────────────────
 
+      rememberAppBase();
       startServer().catch(function (err) {
         console.error('[opencode-desktop]', err);
       });

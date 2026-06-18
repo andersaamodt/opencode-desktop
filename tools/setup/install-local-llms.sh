@@ -29,6 +29,7 @@ die() {
   exit 1
 }
 
+repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 wizardry_dir=${WIZARDRY_DIR-${HOME}/.wizardry}
 ai_dev_dir=
 list_only=0
@@ -109,10 +110,12 @@ export_wizardry_environment() {
 print_recommended_llms() {
   say
   say "Recommended local LLMs for OpenCode:"
-  "$ai_dev_dir/list-available-llms" | while IFS='|' read -r model description size_gb context_k; do
+  sh "$repo_root/app/scripts/local-models-backend.sh" list-models | while IFS='|' read -r model description size_gb context_k _installed; do
     [ -n "$model" ] || continue
     printf '  %-24s %s (%s GB, %sk context)\n' "$model" "$description" "$size_gb" "$context_k"
   done
+  say
+  say "Recommendations last updated June 2026."
 }
 
 open_menu() {

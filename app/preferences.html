@@ -1,0 +1,336 @@
+<!-- Repo license: OWL 3.1 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCode Preferences</title>
+  <link rel="stylesheet" href="preferences.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-inner">
+        <div>
+          <span class="eyebrow">OpenCode Preferences</span>
+          <h1>Local models, without terminal spelunking.</h1>
+          <p>
+            Install Wizardry if needed, bring Ollama online, and manage the
+            curated local models that fit OpenCode’s desktop workflow.
+          </p>
+        </div>
+        <div class="hero-notes">
+          <div class="hero-note">
+            <span class="hero-note-label">How it works</span>
+            <span class="hero-note-value">This screen uses Wizardry as the backend for model setup and lifecycle.</span>
+          </div>
+          <div class="hero-note">
+            <span class="hero-note-label">Recommended flow</span>
+            <span class="hero-note-value">Install Wizardry, install Ollama, start Ollama, then install one or two curated models.</span>
+          </div>
+          <div class="hero-note">
+            <span class="hero-note-label">Desktop shortcut</span>
+            <span class="hero-note-value">Use <strong>Cmd+,</strong> on macOS or <strong>Ctrl+,</strong> on Linux after OpenCode opens.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="status-panel">
+      <div class="panel-head">
+        <div>
+          <h2>System Readiness</h2>
+          <p>OpenCode Desktop only needs a few moving parts. This panel tells you what’s already in place and what needs attention.</p>
+        </div>
+      </div>
+      <div class="status-summary" id="statusSummary">
+        <div class="loading-note">Checking Wizardry and Ollama…</div>
+      </div>
+      <p class="status-message" id="statusMessage">Loading current desktop model status…</p>
+      <div class="status-actions" id="statusActions"></div>
+    </section>
+
+    <section class="models-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Recommended Models</h2>
+          <p>Each option below comes from Wizardry’s curated list, with the most practical desktop-sized coding models first.</p>
+        </div>
+      </div>
+      <div class="models-grid" id="modelsGrid">
+        <div class="loading-note">Loading recommended models…</div>
+      </div>
+      <p class="recommendation-stamp">Recommendations last updated June 2026.</p>
+      <p class="footer-note">
+        Installed status is most accurate when Ollama is running. If Ollama is stopped,
+        start it first and this list will refresh.
+      </p>
+    </section>
+  </main>
+
+  <script src="./.host/shared/wizardry-bridge.js"></script>
+  <script>
+    (function () {
+      var bridge = window.wizardry;
+      var state = {
+        status: null,
+        models: [],
+        busyAction: '',
+        mockMode: !(bridge && typeof bridge.exec === 'function')
+      };
+
+      var el = {
+        statusSummary: document.getElementById('statusSummary'),
+        statusMessage: document.getElementById('statusMessage'),
+        statusActions: document.getElementById('statusActions'),
+        modelsGrid: document.getElementById('modelsGrid')
+      };
+
+      function backendScriptPath() {
+        return decodeURIComponent(new URL('./scripts/local-models-backend.sh', window.location.href).pathname);
+      }
+
+      function parseKeyValue(text) {
+        var out = {};
+        String(text || '').split('\n').forEach(function (line) {
+          var idx = line.indexOf('=');
+          if (idx <= 0) {
+            return;
+          }
+          out[line.slice(0, idx)] = line.slice(idx + 1);
+        });
+        return out;
+      }
+
+      function parseModels(text) {
+        return String(text || '').split('\n').map(function (line) {
+          var trimmed = String(line || '').trim();
+          if (!trimmed) {
+            return null;
+          }
+          var parts = trimmed.split('|');
+          if (parts.length < 5) {
+            return null;
+          }
+          return {
+            name: parts[0],
+            description: parts[1],
+            sizeGb: parts[2],
+            contextK: parts[3],
+            installed: parts[4] === '1'
+          };
+        }).filter(Boolean);
+      }
+
+      function isBusy(actionName) {
+        return state.busyAction === actionName;
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function mockStatus() {
+        return {
+          wizardry_installed: '0',
+          ollama_installed: '0',
+          ollama_running: '0'
+        };
+      }
+
+      function mockModels() {
+        return parseModels([
+          'phi3:mini|lightweight local helper|2.2|128|0',
+          'qwen3:4b|best small all-around coding generalist|2.5|256|0',
+          'qwen2.5-coder:7b|everyday code writer|4.7|32|0',
+          'deepseek-r1:8b|reasoning-heavy bug reviewer|5.2|128|0',
+          'llama3.1:8b|big-context general fallback|4.9|128|0',
+          'devstral:24b|agentic power user pick|14|128|0'
+        ].join('\n'));
+      }
+
+      function backendExec(action, args) {
+        args = args || [];
+        if (state.mockMode) {
+          return Promise.resolve('');
+        }
+        return bridge.exec(['sh', backendScriptPath(), action].concat(args)).then(function (result) {
+          if (typeof result.exit_code !== 'undefined' && result.exit_code !== 0) {
+            throw new Error(String(result.stderr || result.stdout || 'backend error').trim());
+          }
+          return String(result.stdout || '');
+        });
+      }
+
+      function renderStatus() {
+        var status = state.status || mockStatus();
+        var wizardryInstalled = status.wizardry_installed === '1';
+        var ollamaInstalled = status.ollama_installed === '1';
+        var ollamaRunning = status.ollama_running === '1';
+
+        var summary = [
+          statusPill('Wizardry', wizardryInstalled ? 'Installed' : 'Missing', wizardryInstalled ? 'success' : 'warning'),
+          statusPill('Ollama', ollamaInstalled ? 'Installed' : 'Missing', ollamaInstalled ? 'success' : 'warning'),
+          statusPill('Model service', ollamaRunning ? 'Running' : 'Stopped', ollamaRunning ? 'success' : (ollamaInstalled ? 'warning' : 'danger'))
+        ];
+        el.statusSummary.innerHTML = summary.join('');
+
+        if (state.mockMode) {
+          el.statusMessage.textContent = 'Preview mode: open this screen inside OpenCode Desktop to run real installs.';
+        } else if (!wizardryInstalled) {
+          el.statusMessage.textContent = 'Wizardry is the management layer behind this screen. Install it first, then the rest of the flow becomes one-click.';
+        } else if (!ollamaInstalled) {
+          el.statusMessage.textContent = 'Wizardry is ready. Install Ollama next so OpenCode can host local models on this machine.';
+        } else if (!ollamaRunning) {
+          el.statusMessage.textContent = 'Ollama is installed but not serving right now. Start it once, then install or remove curated models below.';
+        } else {
+          el.statusMessage.textContent = 'Everything needed for local models is online. Install or remove any recommended model below.';
+        }
+
+        var actions = [];
+        if (state.mockMode) {
+          actions.push(buttonHtml('Preview only', 'btn btn-ghost', '', true));
+        } else if (!wizardryInstalled) {
+          actions.push(buttonHtml(isBusy('install-wizardry') ? 'Installing Wizardry…' : 'Install Wizardry', 'btn btn-primary', 'install-wizardry', isBusy('install-wizardry')));
+        } else if (!ollamaInstalled) {
+          actions.push(buttonHtml(isBusy('install-ollama') ? 'Installing Ollama…' : 'Install Ollama', 'btn btn-primary', 'install-ollama', isBusy('install-ollama')));
+        } else if (!ollamaRunning) {
+          actions.push(buttonHtml(isBusy('start-ollama') ? 'Starting Ollama…' : 'Start Ollama', 'btn btn-primary', 'start-ollama', isBusy('start-ollama')));
+        } else {
+          actions.push(buttonHtml('Refresh status', 'btn btn-secondary', 'refresh', !!state.busyAction));
+        }
+        el.statusActions.innerHTML = actions.join('');
+      }
+
+      function renderModels() {
+        var models = state.models.length ? state.models : mockModels();
+        if (!models.length) {
+          el.modelsGrid.innerHTML = '<div class="empty-note">No curated models are available right now.</div>';
+          return;
+        }
+
+        var status = state.status || mockStatus();
+        var canManage = status.wizardry_installed === '1' && status.ollama_installed === '1' && status.ollama_running === '1' && !state.mockMode;
+
+        el.modelsGrid.innerHTML = models.map(function (model) {
+          var action = model.installed ? 'remove-model:' + model.name : 'install-model:' + model.name;
+          var busy = isBusy(action);
+          var buttonClass = model.installed ? 'btn btn-danger' : 'btn btn-primary';
+          var buttonLabel = model.installed ? (busy ? 'Removing…' : 'Remove') : (busy ? 'Installing…' : 'Install');
+          var stateName = model.installed ? 'installed' : (canManage ? 'ready' : 'attention');
+          var stateLabel = model.installed ? 'Installed' : (canManage ? 'Ready to install' : 'Needs setup');
+          var buttonDisabled = !canManage || busy || !!state.busyAction;
+
+          return '' +
+            '<article class="model-card">' +
+              '<div class="model-copy">' +
+                '<h3>' + escapeHtml(model.name) + '</h3>' +
+                '<p>' + escapeHtml(model.description) + '</p>' +
+                '<div class="model-meta">' +
+                  '<span class="meta-chip">' + escapeHtml(model.sizeGb) + ' GB</span>' +
+                  '<span class="meta-chip">' + escapeHtml(model.contextK) + 'k context</span>' +
+                '</div>' +
+              '</div>' +
+              '<div class="model-side">' +
+                '<span class="model-state" data-state="' + escapeHtml(stateName) + '">' + escapeHtml(stateLabel) + '</span>' +
+                buttonHtml(buttonLabel, buttonClass, action, buttonDisabled) +
+              '</div>' +
+            '</article>';
+        }).join('');
+      }
+
+      function statusPill(label, value, tone) {
+        return '' +
+          '<div class="status-pill" data-tone="' + escapeHtml(tone) + '">' +
+            '<span class="status-dot" aria-hidden="true"></span>' +
+            '<div><strong>' + escapeHtml(label) + '</strong> <span>' + escapeHtml(value) + '</span></div>' +
+          '</div>';
+      }
+
+      function buttonHtml(label, className, action, disabled) {
+        return '<button type="button" class="' + escapeHtml(className) + '" data-action="' + escapeHtml(action) + '"' + (disabled ? ' disabled' : '') + '>' + escapeHtml(label) + '</button>';
+      }
+
+      function refreshView() {
+        renderStatus();
+        renderModels();
+      }
+
+      function loadStatus() {
+        if (state.mockMode) {
+          state.status = mockStatus();
+          return Promise.resolve();
+        }
+        return backendExec('status').then(function (text) {
+          state.status = parseKeyValue(text);
+        });
+      }
+
+      function loadModels() {
+        if (state.mockMode) {
+          state.models = mockModels();
+          return Promise.resolve();
+        }
+        return backendExec('list-models').then(function (text) {
+          state.models = parseModels(text);
+        });
+      }
+
+      function refreshAll() {
+        return loadStatus().then(loadModels).then(refreshView).catch(function (error) {
+          state.status = state.status || mockStatus();
+          state.models = state.models.length ? state.models : mockModels();
+          el.statusMessage.textContent = error && error.message ? error.message : String(error || 'Failed to refresh');
+          refreshView();
+        });
+      }
+
+      function runAction(actionName, args) {
+        if (state.mockMode) {
+          return;
+        }
+        state.busyAction = actionName;
+        refreshView();
+        backendExec(actionName, args || []).then(function () {
+          state.busyAction = '';
+          return refreshAll();
+        }).catch(function (error) {
+          state.busyAction = '';
+          el.statusMessage.textContent = error && error.message ? error.message : String(error || 'Action failed');
+          refreshView();
+        });
+      }
+
+      document.addEventListener('click', function (event) {
+        var button = event.target.closest('button[data-action]');
+        if (!button) {
+          return;
+        }
+        var action = button.getAttribute('data-action') || '';
+        if (!action || action === 'Preview only') {
+          return;
+        }
+        if (action === 'refresh') {
+          refreshAll();
+          return;
+        }
+        if (action.indexOf('install-model:') === 0) {
+          runAction('install-model', [action.slice('install-model:'.length)]);
+          return;
+        }
+        if (action.indexOf('remove-model:') === 0) {
+          runAction('remove-model', [action.slice('remove-model:'.length)]);
+          return;
+        }
+        runAction(action, []);
+      });
+
+      refreshAll();
+    })();
+  </script>
+</body>
+</html>
