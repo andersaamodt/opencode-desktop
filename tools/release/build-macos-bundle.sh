@@ -26,8 +26,24 @@ WIZARDRY_ROOT=${2-${OPENCODE_DESKTOP_WIZARDRY_APPS_ROOT:-}}
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/opencode-desktop-macos-build.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
+macos_codesign_identity() {
+  if [ -n "${WIZARDRY_CODESIGN_IDENTITY-}" ]; then
+    printf '%s\n' "$WIZARDRY_CODESIGN_IDENTITY"
+    return 0
+  fi
+  default_identity="Artificer Local Development Code Signing"
+  if command -v security >/dev/null 2>&1 \
+      && security find-certificate -c "$default_identity" >/dev/null 2>&1; then
+    printf '%s\n' "$default_identity"
+    return 0
+  fi
+  printf '%s\n' "-"
+}
+
 mkdir -p "$OUT_DIR"
 bundle="$OUT_DIR/OpenCode.app"
+bundle_resources_root="$bundle/Contents/Resources/opencode-desktop"
+bundle_app_path="$bundle_resources_root/app"
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 
@@ -41,9 +57,10 @@ clang -O2 -fobjc-arc -fmodules \
 
 cp "$tmpdir/wizardry-host" "$bundle/Contents/MacOS/wizardry-host"
 chmod +x "$bundle/Contents/MacOS/wizardry-host"
-cp -R "$ROOT_DIR/app" "$bundle/Contents/Resources/app"
-mkdir -p "$bundle/Contents/Resources/app/.host/shared"
-cp "$WIZARDRY_ROOT/apps/.host/shared/wizardry-bridge.js" "$bundle/Contents/Resources/app/.host/shared/wizardry-bridge.js"
+mkdir -p "$bundle_resources_root"
+cp -R "$ROOT_DIR/app" "$bundle_app_path"
+mkdir -p "$bundle_app_path/.host/shared"
+cp "$WIZARDRY_ROOT/apps/.host/shared/wizardry-bridge.js" "$bundle_app_path/.host/shared/wizardry-bridge.js"
 cp "$ROOT_DIR/assets/forge-icon.png" "$bundle/Contents/Resources/forge-icon.png"
 
 cat > "$bundle/Contents/Info.plist" <<'PLIST'
@@ -66,11 +83,20 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>wizardry-host</string>
   <key>WizardryAppEntry</key>
-  <string>Resources/app</string>
+  <string>Resources/opencode-desktop/app</string>
   <key>CFBundleIconFile</key>
   <string>forge-icon.png</string>
 </dict>
 </plist>
 PLIST
+
+if command -v codesign >/dev/null 2>&1; then
+  signing_identity=$(macos_codesign_identity)
+  [ -n "$signing_identity" ] || signing_identity=-
+  codesign --force --deep --sign "$signing_identity" "$bundle" >/dev/null 2>&1 || {
+    printf '%s\n' "build-macos-bundle.sh: failed to codesign $bundle" >&2
+    exit 1
+  }
+fi
 
 printf '%s\n' "$bundle"

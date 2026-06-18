@@ -35,7 +35,7 @@ app_entry=$(/usr/libexec/PlistBuddy -c 'Print :WizardryAppEntry' "$plist")
   printf '%s\n' "smoke-macos-bundle.sh: unexpected CFBundleExecutable: $executable" >&2
   exit 1
 }
-[ "$app_entry" = "Resources/app" ] || {
+[ "$app_entry" = "Resources/opencode-desktop/app" ] || {
   printf '%s\n' "smoke-macos-bundle.sh: unexpected WizardryAppEntry: $app_entry" >&2
   exit 1
 }
@@ -43,13 +43,20 @@ app_entry=$(/usr/libexec/PlistBuddy -c 'Print :WizardryAppEntry' "$plist")
   printf '%s\n' 'smoke-macos-bundle.sh: missing executable host binary' >&2
   exit 1
 }
-[ -f "$bundle/Contents/Resources/app/index.html" ] || {
+[ -f "$bundle/Contents/Resources/opencode-desktop/app/index.html" ] || {
   printf '%s\n' 'smoke-macos-bundle.sh: missing app/index.html in bundle resources' >&2
   exit 1
 }
-[ -f "$bundle/Contents/Resources/app/.host/shared/wizardry-bridge.js" ] || {
+[ -f "$bundle/Contents/Resources/opencode-desktop/app/.host/shared/wizardry-bridge.js" ] || {
   printf '%s\n' 'smoke-macos-bundle.sh: missing bundled wizardry bridge in bundle resources' >&2
   exit 1
 }
+
+if command -v codesign >/dev/null 2>&1; then
+  codesign --verify --deep --strict "$bundle" >/dev/null 2>&1 || {
+    printf '%s\n' 'smoke-macos-bundle.sh: codesign verification failed' >&2
+    exit 1
+  }
+fi
 
 printf '%s\n' "$bundle"
