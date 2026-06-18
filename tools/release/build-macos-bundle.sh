@@ -105,7 +105,7 @@ my $replacement = <<'REPLACEMENT';
            @"    button = document.createElement('button');"
            @"    button.id = 'opencode-desktop-preferences-btn';"
            @"    button.type = 'button';"
-           @"    button.textContent = 'Local Models';"
+           @"    button.textContent = 'Preferences';"
            @"    button.setAttribute('aria-label', 'Open OpenCode Preferences');"
            @"    button.style.position = 'fixed';"
            @"    button.style.top = '18px';"
