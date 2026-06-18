@@ -24,6 +24,23 @@ The app uses `opencode serve --port 0` (random available port) by default.
 | ↗      | Open the web GUI in your default browser |
 | ⟳      | Reload the embedded web GUI |
 
+### Local LLM Setup
+
+OpenCode itself does not manage local model installs. This repo includes a
+Wizardry-powered helper that bootstraps Wizardry if needed, shows the curated
+recommended local models, and then opens the interactive install/manage menu:
+
+```sh
+./tools/setup/install-local-llms.sh
+```
+
+If you only want to see the current recommended model list without opening the
+menu, run:
+
+```sh
+./tools/setup/install-local-llms.sh --list
+```
+
 - **License:** OWL 3.1
 
 ### CI Artifacts
