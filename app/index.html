@@ -8,17 +8,6 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="titlebar">
-    <div class="status-group">
-      <span class="dot" id="statusDot"></span>
-      <span class="status-text" id="statusText">initializing</span>
-    </div>
-    <div class="actions">
-      <button id="browserBtn" class="action-btn" title="Open in browser">↗</button>
-      <button id="reloadBtn" class="action-btn" title="Reload">⟳</button>
-    </div>
-  </header>
-
   <main id="viewport">
     <div id="loading" class="state-center">
       <div class="spinner"></div>
@@ -30,43 +19,31 @@
       <div class="error-icon">⚠</div>
       <h2 class="state-title">Failed to start</h2>
       <p class="state-desc" id="errorMessage">Could not start the OpenCode server.</p>
-      <button id="retryBtn" class="btn">Retry</button>
+      <div class="error-actions">
+        <button id="retryBtn" class="btn">Retry</button>
+        <button id="browserBtn" class="btn btn-secondary">Open in browser</button>
+      </div>
     </div>
-
-    <iframe id="appFrame" class="gui-frame" src="about:blank"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
-      allow="clipboard-read; clipboard-write; microphone; camera; display-capture"
-      hidden></iframe>
   </main>
 
   <script src="./.host/shared/wizardry-bridge.js"></script>
   <script>
     (function () {
       var bridge = window.wizardry;
-      var STATE = { url: null, cleanupPath: null };
+      var STATE = { url: null };
 
       var el = {
         loading:    document.getElementById('loading'),
         error:      document.getElementById('error'),
-        frame:      document.getElementById('appFrame'),
-        statusDot:  document.getElementById('statusDot'),
-        statusText: document.getElementById('statusText'),
         loadingMsg: document.getElementById('loadingMessage'),
         errorMsg:   document.getElementById('errorMessage'),
         retryBtn:   document.getElementById('retryBtn'),
         browserBtn: document.getElementById('browserBtn'),
-        reloadBtn:  document.getElementById('reloadBtn'),
       };
-
-      function setStatus(label, ok) {
-        el.statusText.textContent = label;
-        el.statusDot.className = 'dot' + (ok ? ' dot--ok' : ' dot--init');
-      }
 
       function showState(state) {
         el.loading.hidden = state !== 'loading';
         el.error.hidden   = state !== 'error';
-        el.frame.hidden   = state !== 'ready';
       }
 
       // ── Server lifecycle ──────────────────────────────────────────
@@ -76,7 +53,6 @@
       function startServer() {
         enableBackgroundMode();
         showState('loading');
-        setStatus('starting…', false);
         el.loadingMsg.textContent = 'Finding opencode…';
 
         // Kill any leftover server from a previous run
@@ -84,7 +60,6 @@
 
         if (!bridge || !bridge.exec) {
           el.loadingMsg.textContent = 'Bridge unavailable — probing local port…';
-          setStatus('no bridge', false);
           return pollServer('http://127.0.0.1:' + PORT, 15, 1000)
             .then(function () { return connect('http://127.0.0.1:' + PORT); })
             .catch(fail);
@@ -143,10 +118,8 @@
       }
 
       function connect(url) {
-        setStatus('running', true);
-        showState('ready');
-        el.frame.src = url;
         enableBackgroundMode();
+        window.location.replace(url);
       }
 
       function enableBackgroundMode() {
@@ -158,7 +131,6 @@
 
       function fail(err) {
         showState('error');
-        setStatus('error', false);
         el.errorMsg.textContent = err.message || String(err);
         throw err;
       }
@@ -173,22 +145,15 @@
         }
       }
 
-      function stopServer() { killOldServer(); }
-
-      window.addEventListener('beforeunload', stopServer);
-      window.addEventListener('pagehide', stopServer);
+      // Do not stop the server on navigation. We intentionally hand off the
+      // entire native WebView to the OpenCode app so it can run top-level
+      // instead of as a third-party iframe, which preserves session storage.
 
       // ── UI handlers ───────────────────────────────────────────────
 
       el.browserBtn.addEventListener('click', function () {
         if (STATE.url && bridge && bridge.exec) {
           bridge.exec(['open', STATE.url]);
-        }
-      });
-
-      el.reloadBtn.addEventListener('click', function () {
-        if (STATE.url) {
-          el.frame.src = STATE.url;
         }
       });
 

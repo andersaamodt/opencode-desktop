@@ -3,8 +3,12 @@
 A cross-platform desktop app (macOS, Linux) that wraps `opencode serve`'s web GUI using the Wizardry framework.
 
 When launched, it starts `opencode serve` in the background, waits for the
-server to be ready, then displays the full OpenCode web interface in an
-embedded viewport — no browser tab needed.
+server to be ready, then hands the full native WebView over to the OpenCode
+web interface — no browser tab needed.
+
+This app intentionally avoids embedding OpenCode in a nested iframe. Running
+the OpenCode UI as the top-level page preserves its own storage/session state
+and avoids WebKit third-party embedding glitches.
 
 ### Usage
 
